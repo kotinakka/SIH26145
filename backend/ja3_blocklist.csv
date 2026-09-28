@@ -1,0 +1,5 @@
+# JA3 blocklist: <ja3 md5>,<label>
+# No real threat-intel hashes are bundled. Add entries from a feed you trust
+# (e.g. abuse.ch SSLBL JA3 fingerprints). Changes are picked up automatically.
+9aaaf0ff7223a406a8e1f7c99e7587a1,LAB-DEMO simulated malware client (ja3_demo.pcap)
+ccc514751b175866924439bdbb5bba34,LAB-DEMO simulated malware C2 server, JA3S (ja3s_demo.pcap)

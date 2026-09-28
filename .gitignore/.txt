@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.vscode/
+ml/*.joblib
+ml/traffic_dataset.csv

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Network Threat Monitor</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">TM</div>
+    <div class="brand-text">
+      <h1>Network Threat Monitor</h1>
+      <p>Real-time passive network threat detection</p>
+    </div>
+  </div>
+  <div class="status-block">
+    <span id="conn-dot" class="conn-dot idle"></span>
+    <span id="conn-label">Idle</span>
+    <span id="stream-speed-label" class="stream-speed-label" hidden></span>
+    <span id="clock" class="clock">--:--:--</span>
+  </div>
+</header>
+
+<div class="readonly-banner">
+  <span class="readonly-dot"></span>
+  <span class="readonly-title">Passive monitoring &middot; read-only ingest &middot; no return path &middot; no active probing</span>
+</div>
+
+<section class="controls">
+  <div class="control-group">
+    <label for="pcap-select">Lab capture</label>
+    <select id="pcap-select">
+      <option value="../data/benign.pcap">benign.pcap</option>
+      <option value="../data/ddos.pcap">ddos.pcap</option>
+      <option value="../data/port_scan.pcap">port_scan.pcap</option>
+      <option value="../data/c2_beacon.pcap">c2_beacon.pcap</option>
+      <option value="../data/dns_tunnel.pcap">dns_tunnel.pcap</option>
+      <option value="../data/encrypted_anomaly.pcap">encrypted_anomaly.pcap</option>
+      <option value="../data/data_exfil.pcap">data_exfil.pcap</option>
+      <option value="../data/c2_multiconn.pcap">c2_multiconn.pcap</option>
+      <option value="../data/ja3_demo.pcap">ja3_demo.pcap</option>
+      <option value="../data/ja3s_demo.pcap">ja3s_demo.pcap</option>
+      <option value="../data/ja3s_control.pcap">ja3s_control.pcap (control)</option>
+      <option value="../data/irregular_multiconn.pcap">irregular_multiconn.pcap (control)</option>
+      <option value="../data/udp_flood.pcap">udp_flood.pcap</option>
+      <option value="../data/slowloris.pcap">slowloris.pcap</option>
+      <option value="../data/dga_dns.pcap">dga_dns.pcap</option>
+      <option value="../data/host_sweep.pcap">host_sweep.pcap</option>
+      <option value="../data/all_threats.pcap" selected>all_threats.pcap (All 6 Threats Combined)</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <label for="speed-select">Replay speed</label>
+    <select id="speed-select">
+      <option value="1">1x (realistic)</option>
+      <option value="10">10x</option>
+      <option value="50" selected>50x</option>
+    </select>
+  </div>
+
+  <button id="start-stream-btn" class="btn btn-primary">
+    <span class="btn-icon" aria-hidden="true">&#9654;</span>
+    <span id="start-stream-label">Start live stream</span>
+  </button>
+
+  <div class="control-divider"></div>
+
+  <div class="control-group">
+    <label for="file-input">Upload PCAP</label>
+    <input type="file" id="file-input" accept=".pcap,.pcapng" />
+  </div>
+  <button id="upload-btn" class="btn btn-secondary">Analyze (batch)</button>
+  <button id="clear-btn" class="btn btn-secondary">Clear dashboard</button>
+
+  <p class="control-note">Read-only lab simulation. No traffic is sent back to the monitored network.</p>
+</section>
+
+<div class="run-status" id="run-status"></div>
+
+<section class="stats-strip" id="stats-strip">
+  <div class="stat-card">
+    <span class="stat-value" id="stat-flows">&mdash;</span>
+    <span class="stat-label">Total flows</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-value" id="stat-alerts">&mdash;</span>
+    <span class="stat-label">Total alerts</span>
+  </div>
+  <div class="stat-card stat-critical">
+    <span class="stat-value" id="stat-critical">&mdash;</span>
+    <span class="stat-label">Critical alerts</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-value" id="stat-flowsps">&mdash;</span>
+    <span class="stat-label">Current throughput (flows/sec)</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-value" id="stat-latency">&mdash;</span>
+    <span class="stat-label">Detection latency (last session)</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-value stat-status" id="stat-status">&mdash;</span>
+    <span class="stat-label">System status</span>
+  </div>
+</section>
+
+<main class="workspace">
+
+  <section class="panel traffic-panel">
+    <div class="panel-header">
+      <h2>Network traffic</h2>
+      <span class="panel-subtext" id="traffic-panel-subtext">flows/sec</span>
+    </div>
+    <div class="traffic-chart-wrap">
+      <canvas id="time-chart" height="120"></canvas>
+      <p class="panel-empty" id="traffic-chart-empty">No live traffic. Start a replay or upload a PCAP to begin analysis.</p>
+    </div>
+    <div class="timeline" id="timeline">
+      <div class="timeline-track" id="timeline-track"></div>
+      <p class="timeline-empty" id="timeline-empty">No incidents recorded yet.</p>
+    </div>
+  </section>
+
+  <div class="charts-row">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Threat distribution</h2>
+      </div>
+      <canvas id="threat-chart" height="180"></canvas>
+      <p class="panel-empty" id="threat-chart-empty">No threats detected.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Severity distribution</h2>
+      </div>
+      <canvas id="severity-chart" height="180"></canvas>
+      <p class="panel-empty" id="severity-chart-empty">No threats detected.</p>
+    </section>
+  </div>
+
+  <section class="panel threat-cards-panel">
+    <div class="panel-header">
+      <h2>Threat categories</h2>
+      <button id="clear-filter-btn" class="btn-link" hidden>Clear filter</button>
+    </div>
+    <div class="threat-cards" id="threat-cards"></div>
+  </section>
+
+  <section class="panel alert-feed">
+    <div class="panel-header">
+      <h2>Live security incidents</h2>
+      <span class="feed-count" id="feed-count">0 shown</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Source</th>
+            <th>Destination</th>
+            <th>Threat</th>
+            <th>Confidence</th>
+            <th>Severity</th>
+          </tr>
+        </thead>
+        <tbody id="alert-table-body">
+          <tr class="empty-row">
+            <td colspan="6">No alerts yet. Start a live stream or analyze a capture above.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel performance-panel">
+    <div class="panel-header">
+      <h2>Processing performance</h2>
+    </div>
+    <div class="perf-grid">
+      <div class="perf-item">
+        <span class="perf-label">Flows processed</span>
+        <span class="perf-value" id="perf-flows">&mdash;</span>
+      </div>
+      <div class="perf-item">
+        <span class="perf-label">Current throughput</span>
+        <span class="perf-value" id="perf-throughput">&mdash;</span>
+      </div>
+      <div class="perf-item">
+        <span class="perf-label">Average latency (last session)</span>
+        <span class="perf-value" id="perf-latency">&mdash;</span>
+      </div>
+      <div class="perf-item">
+        <span class="perf-label">Packets processed (last session)</span>
+        <span class="perf-value" id="perf-packets">&mdash;</span>
+      </div>
+      <div class="perf-item">
+        <span class="perf-label">System status</span>
+        <span class="perf-value" id="perf-status">&mdash;</span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="detail-panel" class="detail-panel">
+  <div class="detail-header">
+    <h3>Incident detail</h3>
+    <button id="detail-close" class="btn-close" aria-label="Close">&times;</button>
+  </div>
+  <div class="detail-body" id="detail-body">
+    <!-- populated by app.js -->
+  </div>
+</div>
+<div id="detail-scrim" class="detail-scrim"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

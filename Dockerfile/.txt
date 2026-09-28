@@ -1,0 +1,18 @@
+# Use lightweight official Python image
+FROM python:3.10-slim
+
+# Set working directory inside container
+WORKDIR /app
+
+# Copy and install python dependencies first (optimizes Docker caching)
+COPY backend/requirements.txt ./backend/
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# Copy the rest of the project files into the container
+COPY . .
+
+# Expose the FastAPI port
+EXPOSE 8000
+
+# Start FastAPI using uvicorn binding to all network interfaces
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
