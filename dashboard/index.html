@@ -9,13 +9,19 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <div class="brand-mark">TM</div>
+    <div class="brand-mark" style="display: flex; align-items: center; justify-content: center; background: #1e293b; border: 1px solid #334155;">
+      <!-- Professional Security Shield SVG -->
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        <path d="M9 12l2 2 4-4"></path>
+      </svg>
+    </div>
     <div class="brand-text">
       <h1>Network Threat Monitor</h1>
       <p>Real-time passive network threat detection</p>
@@ -223,6 +229,6 @@
 </div>
 <div id="detail-scrim" class="detail-scrim"></div>
 
-<script src="app.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

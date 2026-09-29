@@ -182,6 +182,18 @@ select, input[type="file"] {
   align-items: center;
   gap: 6px;
 }
+.traffic-chart-wrap {
+    position: relative;
+    height: 220px; /* Controls the height of the chart */
+    width: 100%;
+    overflow: hidden;
+}
+
+.traffic-chart-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+  
+}
 
 .btn-icon { font-size: 10px; }
 

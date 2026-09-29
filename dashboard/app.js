@@ -1,7 +1,6 @@
 const API_BASE = window.location.origin;
 const WS_PROTO = window.location.protocol === "https:" ? "wss:" : "ws:";
-const WS_URL = `${WS_PROTO}//${window.location.host}/ws/alerts}`;
-
+const WS_URL = `${WS_PROTO}//${window.location.host}/ws/alerts`;
 // How close together (ms) two alerts with the same threat_class/src/dst have
 // to be before they're folded into a single incident instead of a new row.
 const AGGREGATION_WINDOW_MS = 30000;
@@ -239,26 +238,12 @@ el.clearFilterBtn.addEventListener("click", () => {
   renderIncidentTable();
 });
 
-let syntheticTickCounter = 0;
+function recordTrafficPoint(timestampIso) {
+  const t = new Date(timestampIso).getTime() / 1000;
+  const bucket = Math.floor(t / 10) * 10;
+  timeBuckets.set(bucket, (timeBuckets.get(bucket) || 0) + 1);
 
-function recordTrafficPoint(timestampIso, weight = 1) {
-  let bucket = Math.floor(new Date(timestampIso).getTime() / 1000);
-
-  // In batch mode (/analyze), all alerts arrive in the same millisecond;
-  // spread them across a 25-second window so the chart draws a full curve.
-  if (!isStreaming) {
-    syntheticTickCounter += 1;
-    bucket = bucket - 25 + Math.floor(syntheticTickCounter / 14);
-  }
-
-  // Seed a zero point right before the first bucket so Chart.js always has >= 2 points to draw a line
-  if (timeBuckets.size === 0) {
-    timeBuckets.set(bucket - 1, 0);
-  }
-
-  timeBuckets.set(bucket, (timeBuckets.get(bucket) || 0) + weight);
-
-  // Keep the most recent 30 one-second buckets
+  // Keep only the most recent 30 buckets (5 minutes of history)
   const sortedKeys = [...timeBuckets.keys()].sort((a, b) => a - b);
   while (sortedKeys.length > 30) {
     timeBuckets.delete(sortedKeys.shift());
@@ -270,7 +255,7 @@ function recordTrafficPoint(timestampIso, weight = 1) {
   timeChart.data.labels = keys.map((k) =>
     new Date(k * 1000).toLocaleTimeString([], { minute: "2-digit", second: "2-digit" })
   );
-  timeChart.data.datasets[0].data = keys.map((k) => timeBuckets.get(k));
+  timeChart.data.datasets[0].data = keys.map((k) => timeBuckets.get(k) / 10);
   timeChart.update();
 }
 
@@ -314,8 +299,13 @@ function severityMax(a, b) {
 }
 
 function incidentKey(alert) {
-  if (alert.threat_class === "DDOS") return `DDOS|*|${alert.dst_ip}`;
-  if (alert.threat_class === "PORT_SCAN") return `PORT_SCAN|${alert.src_ip}|*`;
+  // DDoS is many sources hitting one destination — group by the
+  // victim, not by (source, destination), or a distributed flood
+  // with 200 sources becomes 200 separate rows instead of one
+  // incident. Everything else groups by both ends as before.
+  if (alert.threat_class === "DDOS") {
+    return `DDOS|${alert.dst_ip}`;
+  }
   return `${alert.threat_class}|${alert.src_ip}|${alert.dst_ip}`;
 }
 
@@ -335,6 +325,7 @@ function ingestAlert(alert) {
     existing.protocol = alert.protocol;
     existing.srcPort = alert.src_port;
     existing.dstPort = alert.dst_port;
+    existing.srcIps.add(alert.src_ip);
     if (alertTime > new Date(existing.lastTimestamp).getTime()) existing.lastTimestamp = alert.timestamp;
     if (alertTime < new Date(existing.firstTimestamp).getTime()) existing.firstTimestamp = alert.timestamp;
     return { incident: existing, isNew: false };
@@ -345,6 +336,7 @@ function ingestAlert(alert) {
     key,
     threatClass: alert.threat_class,
     srcIp: alert.src_ip,
+    srcIps: new Set([alert.src_ip]),
     srcPort: alert.src_port,
     dstIp: alert.dst_ip,
     dstPort: alert.dst_port,
@@ -394,9 +386,13 @@ function renderIncidentTable() {
     const time = new Date(inc.lastTimestamp).toLocaleTimeString();
     const countTag = inc.count > 1 ? `<span class="incident-count">&times;${inc.count}</span>` : "";
 
+    const sourceCell = inc.srcIps.size > 1
+      ? `${inc.srcIps.size} sources`
+      : `${inc.srcIp}:${inc.srcPort}`;
+
     tr.innerHTML = `
       <td class="mono">${time}</td>
-      <td class="mono">${inc.srcIp}:${inc.srcPort}</td>
+      <td class="mono">${sourceCell}</td>
       <td class="mono">${inc.dstIp}:${inc.dstPort}</td>
       <td class="threat-tag">${categoryOf(inc.threatClass).label}${countTag}</td>
       <td class="mono">${(inc.confidence * 100).toFixed(0)}%</td>
@@ -479,7 +475,10 @@ function explainIncident(inc) {
   const factSummary = bits.length ? bits.slice(0, 3).join(", ") : "the traffic pattern observed for this flow";
   const groupNote = inc.count > 1 ? ` This incident groups ${inc.count} related events from the same source and destination.` : "";
 
-  return `The source ${inc.srcIp} showed ${factSummary} toward ${inc.dstIp}, which is consistent with ${label.toLowerCase()} behavior.${groupNote}`;
+  const sourceDesc = inc.srcIps.size > 1
+    ? `${inc.srcIps.size} distinct sources`
+    : `The source ${inc.srcIp}`;
+  return `${sourceDesc} showed ${factSummary} toward ${inc.dstIp}, which is consistent with ${label.toLowerCase()} behavior.${groupNote}`;
 }
 
 // ---------- Detail panel ----------
@@ -487,7 +486,7 @@ function explainIncident(inc) {
 function openDetailPanel(inc) {
   el.detailBody.innerHTML = `
     <div class="detail-flow">
-      ${inc.srcIp}:${inc.srcPort} &rarr; ${inc.dstIp}:${inc.dstPort}
+      ${inc.srcIps.size > 1 ? `${inc.srcIps.size} sources` : `${inc.srcIp}:${inc.srcPort}`} &rarr; ${inc.dstIp}:${inc.dstPort}
       <div style="color: var(--ink-muted); margin-top:4px;">${inc.protocol || "—"} &middot; ${new Date(inc.lastTimestamp).toLocaleString()}</div>
     </div>
 
@@ -580,10 +579,9 @@ function resetDashboard() {
 }
 
 function beginSession() {
-  // Keep existing incidents on screen so multiple PCAP runs accumulate
-  // across all 6 threat categories! Only "Clear dashboard" wipes them.
-  el.statAlerts.textContent = String(sessionAlerts);
-  el.statCritical.textContent = String(sessionCritical);
+  resetDashboard();
+  el.statAlerts.textContent = "0";
+  el.statCritical.textContent = "0";
   setRunStatus("Processing traffic...");
 }
 
@@ -630,7 +628,7 @@ function startStream() {
 
   beginSession();
 
-  ws = new WebSocket(`${WS_BASE}/ws/alerts`);
+  ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
     isStreaming = true;
@@ -644,14 +642,6 @@ function startStream() {
 
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    if (data.type === "traffic") {
-      recordTrafficPoint(data.timestamp, data.packets);
-      el.statFlows.textContent = data.total_flows;
-      el.statFlowsps.textContent = data.flows_per_second;
-      el.perfFlows.textContent = data.total_flows;
-      el.perfThroughput.textContent = `${data.flows_per_second} flows/sec`;
-    }
-
 
     if (data.type === "alert") {
       const { isNew } = ingestAlert(data);
@@ -668,9 +658,7 @@ function startStream() {
         if (row) {
           row.classList.add("row-enter");
           setTimeout(() => row.classList.remove("row-enter"), 500);
-
         }
-
       }
     }
 
@@ -763,35 +751,6 @@ el.uploadBtn.addEventListener("click", uploadAndAnalyze);
 
 // ---------- Initial load ----------
 
-// ---------- Initial load ----------
-
-async function loadStoredAlerts() {
-  try {
-    const res = await fetch(`${API_BASE}/alerts?limit=500`);
-    if (!res.ok) return;
-    const data = await res.json();
-    // Oldest first so timestamps order naturally
-    const alerts = (data.alerts || []).slice().reverse();
-    for (const alert of alerts) {
-      if (alert.threat_class === "BENIGN") continue;
-      ingestAlert(alert);
-      recordTrafficPoint(alert.timestamp);
-      sessionAlerts += 1;
-      if (alert.severity === "CRITICAL") sessionCritical += 1;
-    }
-    el.statAlerts.textContent = String(sessionAlerts);
-    el.statCritical.textContent = String(sessionCritical);
-    refreshAllVisuals();
-    setSystemStatus("online");
-    if (sessionAlerts > 0) {
-      setRunStatus(`Loaded ${sessionAlerts} historical alerts grouped into ${incidentsList.length} incidents.`);
-    }
-  } catch (err) {
-    setSystemStatus("offline");
-  }
-}
-
 resetDashboard();
 setRunStatus("No live traffic. Start a replay or upload a PCAP to begin analysis.");
 checkBackend();
-loadStoredAlerts();

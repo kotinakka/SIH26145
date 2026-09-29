@@ -34,6 +34,7 @@ def _new_flow_state():
         "packet_count": 0,
         "byte_count": 0,
         "syn_count": 0,
+        "udp_count": 0,
         "start_time": None,
         "end_time": None,
         "timestamps": [],
@@ -45,6 +46,7 @@ def _flow_features(flow_id, state):
     packet_count = state["packet_count"]
     byte_count = state["byte_count"]
     syn_count = state["syn_count"]
+    udp_count = state.get("udp_count", 0)
     interval_stats = _interval_stats(state["timestamps"])
 
     return {
@@ -55,11 +57,13 @@ def _flow_features(flow_id, state):
         "protocol": flow_id[4],
         "packet_count": packet_count,
         "byte_count": byte_count,
+        "bytes_total": byte_count,  # Aligned with batch feature name
         "duration": duration,
         "packets_per_second": packet_count / duration,
         "bytes_per_second": byte_count / duration,
         "syn_count": syn_count,
         "syn_ratio": syn_count / packet_count if packet_count else 0.0,
+        "udp_ratio": udp_count / packet_count if packet_count else 0.0,
         "start_time": state["start_time"],
         **interval_stats,
     }
@@ -277,6 +281,8 @@ def stream_detect(pcap_file, speed_factor=50.0, recompute_every=10):
 
         if packet.haslayer(TCP) and "S" in str(packet[TCP].flags):
             state["syn_count"] += 1
+        elif packet.haslayer(UDP):
+            state["udp_count"] += 1
 
         dns_q = _extract_dns_query(packet, ip)
         if dns_q is not None:

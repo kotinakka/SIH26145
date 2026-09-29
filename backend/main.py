@@ -40,6 +40,7 @@ app = FastAPI(
     description="Passive, read-only detection of threats in unidirectional IP traffic.",
     version="0.1.0",
 )
+dashboard_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dashboard"))
 if os.path.exists(dashboard_path):
     app.mount("/static", StaticFiles(directory=dashboard_path), name="static")
 
@@ -152,7 +153,12 @@ async def analyze(
         }
 
         alerts.append(alert)
-        insert_alert(alert, source_file=file.filename)
+        # Only persist real detections. Saving BENIGN rows (which
+        # happens when include_benign=true) pollutes alerts.db and
+        # /statistics with zero-severity noise that never clears
+        # until the DB file is deleted by hand.
+        if verdict["threat_class"] != "BENIGN":
+            insert_alert(alert, source_file=file.filename)
 
     return {
         "source_file": file.filename,
