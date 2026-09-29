@@ -5,7 +5,7 @@ A real-time, passive network threat detection dashboard and analysis tool. It in
 # How to Run
 - download and extract the zip file
 - open the backend folder `backend/`folder
-- Run `pip install -re requirements.txt` 
+- Run `pip install -r requirements.txt` 
 - Run `uvicorn main:app --reload` & follow the link.
 ---
 
